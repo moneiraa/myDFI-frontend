@@ -4,17 +4,13 @@ This is the Flutter mobile app for MyDFI.
 It connects to the backend API to:
 - View user medications
 - Add new medications with autocomplete support
-- Show daily notifications
-
--------------------------------------
+- Show daily notifications (scheduled only if active drug-food interactions exist)
 
 ## Tech Stack
 - Framework: Flutter
 - Language: Dart
 - Backend: FastAPI
 - Database: MongoDB Atlas (via backend)
-
-
 
 ## How to Run
 
@@ -29,13 +25,11 @@ It connects to the backend API to:
    Connect a device or start an emulator, then:
    flutter run
 
-
-
 ## API URL
 By default, the app connects to:
 https://mydfi.onrender.com
 
-
-
 ## Notifications
 The app uses flutter_local_notifications to send daily reminders.
+- Notifications are scheduled only if the backend confirms active interactions.
+- Notification scheduling logic is handled in lib/alert_service.dart

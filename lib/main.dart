@@ -1,110 +1,15 @@
+import 'alert_service.dart';
 import 'dart:io';
 import 'dart:convert'; // <-- for jsonEncode, jsonDecode
 import 'package:http/http.dart' as http; // <-- for http.get, http.post, etc.
 import 'package:flutter/material.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:timezone/data/latest.dart' as tz;
-import 'package:timezone/timezone.dart' as tz;
-
-final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-    FlutterLocalNotificationsPlugin();
-
-// ======== INITIALIZE NOTIFICATIONS ========
-Future<void> initializeNotifications() async {
-  const AndroidInitializationSettings androidSettings =
-      AndroidInitializationSettings('@mipmap/ic_launcher');
-  const DarwinInitializationSettings iosSettings =
-      DarwinInitializationSettings();
-  const InitializationSettings settings =
-      InitializationSettings(android: androidSettings, iOS: iosSettings);
-
-  await flutterLocalNotificationsPlugin.initialize(settings);
-  tz.initializeTimeZones();
-}
-
-// ======== REQUEST PERMISSIONS (iOS & ANDROID 13+) ========
-Future<void> requestNotificationPermissions() async {
-  // iOS permission
-  final iosImplementation =
-      flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<
-          IOSFlutterLocalNotificationsPlugin>();
-  await iosImplementation?.requestPermissions(
-    alert: true,
-    badge: true,
-    sound: true,
-  );
-
-  // Android 13+ permission
-  final androidImplementation =
-      flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
-  await androidImplementation?.requestNotificationsPermission();
-}
-
-// ======== SHOW NOTIFICATION ========
-Future<void> showNotification(String title, String message) async {
-  const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-    'daily_alerts', 'Daily Alerts',
-    channelDescription: 'Daily static alerts',
-    importance: Importance.high,
-    priority: Priority.high,
-  );
-  const NotificationDetails notificationDetails =
-      NotificationDetails(android: androidDetails);
-  await flutterLocalNotificationsPlugin.show(
-    0,
-    title,
-    message,
-    notificationDetails,
-  );
-}
-
-// ======== SCHEDULE DAILY NOTIFICATION (10 AM) ========
-Future<void> scheduleDailyNotification() async {
-  try {
-    const String title = 'سالِم';
-    const String message = 'سلامتك اهم، شيّك اذا في تداخلات مع دواك';
-
-    const AndroidNotificationDetails androidDetails =
-        AndroidNotificationDetails('daily_alerts', 'Daily Alerts',
-            channelDescription: 'Daily static alerts',
-            importance: Importance.high,
-            priority: Priority.high);
-    const NotificationDetails notificationDetails =
-        NotificationDetails(android: androidDetails);
-
-    await flutterLocalNotificationsPlugin.zonedSchedule(
-      0,
-      title,
-      message,
-      _nextInstanceOfTenAM(),
-      notificationDetails,
-      androidAllowWhileIdle: true,
-      matchDateTimeComponents: DateTimeComponents.time,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-    );
-  } catch (e) {
-    debugPrint("Error scheduling notification: $e");
-  }
-}
-
-// ======== NEXT 10 AM ========
-tz.TZDateTime _nextInstanceOfTenAM() {
-  final tz.TZDateTime now = tz.TZDateTime.now(tz.local);
-  tz.TZDateTime scheduledDate =
-      tz.TZDateTime(tz.local, now.year, now.month, now.day, 10);
-  if (scheduledDate.isBefore(now)) {
-    scheduledDate = scheduledDate.add(const Duration(days: 1));
-  }
-  return scheduledDate;
-}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeNotifications();
   await requestNotificationPermissions();
-  await scheduleDailyNotification();
+  const String baseUrl = "https://mydfi.onrender.com";  // or from your existing variable
+  await scheduleAlertIfInteractionsExist(baseUrl);
   runApp(const MedicationApp());
 }
 
