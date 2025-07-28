@@ -1,16 +1,41 @@
-# frontend
+# MyDFI Frontend (Flutter)
 
-A new Flutter project.
+This is the Flutter mobile app for MyDFI.  
+It connects to the backend API to:
+- View user medications
+- Add new medications with autocomplete support
+- Show daily notifications
 
-## Getting Started
+-------------------------------------
 
-This project is a starting point for a Flutter application.
+## Tech Stack
+- Framework: Flutter
+- Language: Dart
+- Backend: FastAPI
+- Database: MongoDB Atlas (via backend)
 
-A few resources to get you started if this is your first Flutter project:
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## How to Run
+
+1. Clone repository
+   git clone https://github.com/<your-username>/myDFI-frontend.git
+   cd myDFI-frontend
+
+2. Install packages
+   flutter pub get
+
+3. Run app
+   Connect a device or start an emulator, then:
+   flutter run
+
+
+
+## API URL
+By default, the app connects to:
+https://mydfi.onrender.com
+
+
+
+## Notifications
+The app uses flutter_local_notifications to send daily reminders.
