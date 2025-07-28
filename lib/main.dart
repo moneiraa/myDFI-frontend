@@ -212,8 +212,9 @@ class MedicationListPage extends StatefulWidget {
 class _MedicationListPageState extends State<MedicationListPage> {
   List<Medication> medications = [];
 
-  // PRODUCTION BACKEND URL (No local IP hardcoding)
-  final String baseUrl = "https://your-production-backend.com";
+  // PLACEHOLDER BACKEND URL 
+final String baseUrl = "https://mydfi.onrender.com";
+
 
   Future<List<dynamic>> autocomplete(String query) async {
     final response = await http.get(
