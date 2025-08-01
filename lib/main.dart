@@ -2,6 +2,7 @@ import 'alert_service.dart';
 import 'dart:convert'; // <-- for jsonEncode, jsonDecode
 import 'package:http/http.dart' as http; // <-- for http.get, http.post, etc.
 import 'package:flutter/material.dart';
+import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 
 void main() async {
@@ -157,15 +158,18 @@ class _MedicationListPageState extends State<MedicationListPage> {
 final String baseUrl = "https://mydfi.onrender.com";
 
 
-  Future<List<dynamic>> autocomplete(String query) async {
-    final response = await http.get(
-        Uri.parse("$baseUrl/autocomplete?q=${Uri.encodeComponent(query)}"));
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body)['results'];
-    } else {
-      return [];
-    }
+  Future<List<Map<String, dynamic>>> autocomplete(String query) async {
+  final response = await http.get(
+    Uri.parse("$baseUrl/autocomplete?q=${Uri.encodeComponent(query)}")
+  );
+  if (response.statusCode == 200) {
+    return List<Map<String, dynamic>>.from(
+        jsonDecode(response.body)['results']);
+  } else {
+    return [];
   }
+}
+
 
   Future<Map<String, dynamic>> autofill(String name) async {
     final response = await http.get(
@@ -403,6 +407,8 @@ Future<void> addMedication(Medication med) async {
     );
   }
 }
+
+
 // =================== AddMedicationPage ===================
 class AddMedicationPage extends StatefulWidget {
   final Future<List<dynamic>> Function(String) autocomplete;
@@ -419,17 +425,10 @@ class AddMedicationPage extends StatefulWidget {
 }
 
 class _AddMedicationPageState extends State<AddMedicationPage> {
-  final _tradeController = TextEditingController();
-  final _scientificController = TextEditingController();
-  final _startDateController = TextEditingController();
-  final _endDateController = TextEditingController();
-
-  final LayerLink _tradeLink = LayerLink();
-  final LayerLink _scientificLink = LayerLink();
-
-  OverlayEntry? _overlayEntry;
-  List<dynamic> _suggestions = [];
-  bool _isTrade = true;
+  final TextEditingController _tradeController = TextEditingController();
+  final TextEditingController _scientificController = TextEditingController();
+  final TextEditingController _startDateController = TextEditingController();
+  final TextEditingController _endDateController = TextEditingController();
 
   String? _sfdaDrugId;
   DateTime? _startDate;
@@ -437,96 +436,11 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
 
   @override
   void dispose() {
-    _overlayEntry?.remove();
     _tradeController.dispose();
     _scientificController.dispose();
     _startDateController.dispose();
     _endDateController.dispose();
     super.dispose();
-  }
-
-  void _closeOverlay() {
-    _overlayEntry?.remove();
-    _overlayEntry = null;
-  }
-
-  void _showOverlay(BuildContext context, bool isTrade) {
-    _closeOverlay();
-    final layerLink = isTrade ? _tradeLink : _scientificLink;
-
-    _overlayEntry = OverlayEntry(
-      builder: (context) => Positioned(
-        width: MediaQuery.of(context).size.width - 40,
-        child: CompositedTransformFollower(
-          link: layerLink,
-          showWhenUnlinked: false,
-          offset: const Offset(0, 40),
-          child: Material(
-            elevation: 8,
-            borderRadius: BorderRadius.circular(8),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 250),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: _suggestions.isEmpty
-                    ? Container(
-                        padding: const EdgeInsets.all(16),
-                        child: const Text(
-                          "No results found",
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                      )
-                    : ListView.builder(
-                        padding: EdgeInsets.zero,
-                        shrinkWrap: true,
-                        itemCount:
-                            _suggestions.length > 15 ? 15 : _suggestions.length,
-                        itemBuilder: (context, index) {
-                          final s = _suggestions[index];
-                          return ListTile(
-                            title: Text(
-                              s['trade_name'] ?? '',
-                              style: const TextStyle(color: Colors.blue),
-                            ),
-                            subtitle: Text(
-                              s['scientific_name'] ?? '',
-                              style: const TextStyle(color: Colors.blue),
-                            ),
-                            onTap: () async {
-                              final auto = await widget.autofill(
-                                  s['trade_name'] ?? s['scientific_name']);
-                              _sfdaDrugId = auto['sfda_drug_id'] ?? '';
-                              _tradeController.text = auto['trade_name'] ?? '';
-                              _scientificController.text =
-                                  auto['scientific_name'] ?? '';
-                              _closeOverlay();
-                            },
-                          );
-                        },
-                      ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    final overlay = Overlay.of(context, rootOverlay: true);
-    if (overlay != null && _overlayEntry != null) {
-      overlay.insert(_overlayEntry!);
-    }
-  }
-
-  Future<void> _updateSuggestions(String query, bool isTrade) async {
-    if (query.isNotEmpty) {
-      _isTrade = isTrade;
-      final result = await widget.autocomplete(query);
-      debugPrint("Suggestions: $result");
-      setState(() => _suggestions = result);
-      _showOverlay(context, isTrade);
-    } else {
-      _closeOverlay();
-    }
   }
 
   Future<void> _pickDate(bool isStart) async {
@@ -567,10 +481,14 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
       ),
     );
   }
+void _onTapOutside() => FocusScope.of(context).unfocus();
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
+@override
+Widget build(BuildContext context) {
+  return GestureDetector(
+    onTap: _onTapOutside,
+    behavior: HitTestBehavior.translucent,
+    child: Scaffold(
       appBar: AppBar(
         leading: const Icon(Icons.person, color: Colors.black),
         backgroundColor: Colors.white,
@@ -585,108 +503,139 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
         ),
         centerTitle: true,
       ),
-      body: GestureDetector(
-        onTap: _closeOverlay,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text("Please fill in information to add your new medication"),
-              const SizedBox(height: 12),
-              CompositedTransformTarget(
-                link: _tradeLink,
-                child: TextField(
-                  controller: _tradeController,
-                  decoration: const InputDecoration(labelText: "Trade Name"),
-                  onChanged: (value) => _updateSuggestions(value, true),
-                ),
-              ),
-              const SizedBox(height: 8),
-              CompositedTransformTarget(
-                link: _scientificLink,
-                child: TextField(
-                  controller: _scientificController,
-                  decoration: const InputDecoration(labelText: "Scientific Name"),
-                  onChanged: (value) => _updateSuggestions(value, false),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                readOnly: true,
-                decoration: const InputDecoration(
-                  labelText: "Start Date",
-                  suffixIcon: Icon(Icons.calendar_today),
-                ),
-                onTap: () => _pickDate(true),
-                controller: _startDateController,
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                readOnly: true,
-                decoration: const InputDecoration(
-                  labelText: "End Date",
-                  suffixIcon: Icon(Icons.calendar_today),
-                ),
-                onTap: () => _pickDate(false),
-                controller: _endDateController,
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  TextButton(
-                    onPressed: () {
-                      _closeOverlay();
-                      Navigator.pop(context);
-                    },
-                    child: const Text("Cancel",
-                        style: TextStyle(color: Colors.red)),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      _closeOverlay();
-                      if (_tradeController.text.isNotEmpty &&
-                          _scientificController.text.isNotEmpty) {
-                        if (_startDate != null &&
-                            _endDate != null &&
-                            _startDate!.isAfter(_endDate!)) {
-                          _showInvalidDateDialog();
-                          return;
-                        }
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text("Please fill in information to add your new medication"),
+            const SizedBox(height: 12),
 
-                        debugPrint("Submitting medication...");
-                        final med = Medication(
-                          "",
-                          _sfdaDrugId ?? '',
-                          _tradeController.text,
-                          _scientificController.text,
-                          _startDate != null ? _formatDate(_startDate!) : "",
-                          _endDate != null ? _formatDate(_endDate!) : "",
-                        );
+            // -------- Trade Name Autocomplete --------
+            TypeAheadField<Map<String, dynamic>>(
+              suggestionsBoxDecoration: const SuggestionsBoxDecoration(
+                constraints: BoxConstraints(maxHeight: 250), // <-- FIX
+              ),
+              textFieldConfiguration: TextFieldConfiguration(
+                controller: _tradeController,
+                decoration: const InputDecoration(labelText: "Trade Name"),
+              ),
+              suggestionsCallback: (pattern) async {
+                final results = await widget.autocomplete(pattern);
+                return results.cast<Map<String, dynamic>>();
+              },
+              itemBuilder: (context, suggestion) {
+                return ListTile(
+                  title: Text(suggestion['trade_name'] ?? ''),
+                  subtitle: Text(suggestion['scientific_name'] ?? ''),
+                );
+              },
+              onSuggestionSelected: (suggestion) async {
+                final auto = await widget.autofill(
+                    suggestion['trade_name'] ?? suggestion['scientific_name']);
+                _sfdaDrugId = auto['sfda_drug_id'] ?? '';
+                _tradeController.text = auto['trade_name'] ?? '';
+                _scientificController.text = auto['scientific_name'] ?? '';
+              },
+            ),
+            const SizedBox(height: 8),
 
-                        Navigator.pop(context, med); // parent calls backend
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Medication added successfully!'),
-                          ),
-                        );
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Please fill in all fields.'),
-                          ),
-                        );
+            // -------- Scientific Name Autocomplete --------
+            TypeAheadField<Map<String, dynamic>>(
+              suggestionsBoxDecoration: const SuggestionsBoxDecoration(
+                constraints: BoxConstraints(maxHeight: 250), // <-- FIX
+              ),
+              textFieldConfiguration: TextFieldConfiguration(
+                controller: _scientificController,
+                decoration: const InputDecoration(labelText: "Scientific Name"),
+              ),
+              suggestionsCallback: (pattern) async {
+                final results = await widget.autocomplete(pattern);
+                return results.cast<Map<String, dynamic>>();
+              },
+              itemBuilder: (context, suggestion) {
+                return ListTile(
+                  title: Text(suggestion['trade_name'] ?? ''),
+                  subtitle: Text(suggestion['scientific_name'] ?? ''),
+                );
+              },
+              onSuggestionSelected: (suggestion) async {
+                final auto = await widget.autofill(
+                    suggestion['trade_name'] ?? suggestion['scientific_name']);
+                _sfdaDrugId = auto['sfda_drug_id'] ?? '';
+                _tradeController.text = auto['trade_name'] ?? '';
+                _scientificController.text = auto['scientific_name'] ?? '';
+              },
+            ),
+            const SizedBox(height: 8),
+
+            // -------- Start & End Dates --------
+            TextField(
+              readOnly: true,
+              decoration: const InputDecoration(
+                labelText: "Start Date",
+                suffixIcon: Icon(Icons.calendar_today),
+              ),
+              onTap: () => _pickDate(true),
+              controller: _startDateController,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              readOnly: true,
+              decoration: const InputDecoration(
+                labelText: "End Date",
+                suffixIcon: Icon(Icons.calendar_today),
+              ),
+              onTap: () => _pickDate(false),
+              controller: _endDateController,
+            ),
+            const SizedBox(height: 12),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("Cancel", style: TextStyle(color: Colors.red)),
+                ),
+                TextButton(
+                  onPressed: () {
+                    if (_tradeController.text.isNotEmpty &&
+                        _scientificController.text.isNotEmpty) {
+                      if (_startDate != null &&
+                          _endDate != null &&
+                          _startDate!.isAfter(_endDate!)) {
+                        _showInvalidDateDialog();
+                        return;
                       }
-                    },
-                    child: const Text("OK", style: TextStyle(color: Colors.blue)),
-                  ),
-                ],
-              )
-            ],
-          ),
+
+                      final med = Medication(
+                        "",
+                        _sfdaDrugId ?? '',
+                        _tradeController.text,
+                        _scientificController.text,
+                        _startDate != null ? _formatDate(_startDate!) : "",
+                        _endDate != null ? _formatDate(_endDate!) : "",
+                      );
+
+                      Navigator.pop(context, med);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Medication added successfully!')),
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Please fill in all fields.')),
+                      );
+                    }
+                  },
+                  child: const Text("OK", style: TextStyle(color: Colors.blue)),
+                ),
+              ],
+            )
+          ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
