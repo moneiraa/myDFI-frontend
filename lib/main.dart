@@ -1,17 +1,29 @@
 import 'alert_service.dart';
-import 'dart:io';
 import 'dart:convert'; // <-- for jsonEncode, jsonDecode
 import 'package:http/http.dart' as http; // <-- for http.get, http.post, etc.
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await initializeNotifications();
-  await requestNotificationPermissions();
-  const String baseUrl = "https://mydfi.onrender.com";  // or from your existing variable
-  await scheduleAlertIfInteractionsExist(baseUrl);
+
+  const String baseUrl = "https://mydfi.onrender.com";
+
+  // Only initialize notifications on mobile platforms
+  if (defaultTargetPlatform == TargetPlatform.iOS ||
+      defaultTargetPlatform == TargetPlatform.android) {
+    try {
+      await initializeNotifications();
+      await requestNotificationPermissions();
+      await scheduleAlertIfInteractionsExist(baseUrl);
+    } catch (e, s) {
+      debugPrint("Notification initialization error: $e\n$s");
+    }
+  }
+
   runApp(const MedicationApp());
 }
+
 
 // ------------------- ORIGINAL APP CODE -------------------
 
@@ -22,40 +34,61 @@ class Medication {
   String scientificName;
   String startDate;
   String endDate;
+  String userId="1"; // <-- NEW field for future multi-user support
 
-  Medication(this.id, this.sfdaDrugId, this.tradeName, this.scientificName,
-      this.startDate, this.endDate);
+  Medication(
+    this.id,
+    this.sfdaDrugId,
+    this.tradeName,
+    this.scientificName,
+    this.startDate,
+    this.endDate, {
+    this.userId = "1", // default shared user for now
+  });
 
   Map<String, dynamic> toJson() => {
-        "_id": id,
+
         "sfda_drug_id": sfdaDrugId,
         "trade_name": tradeName,
         "scientific_name": scientificName,
-        "duration": "$startDate - $endDate"
+        "duration": "$startDate - $endDate",
+        "user_id": userId, // new field for future unique users
       };
 
   factory Medication.fromJson(Map<String, dynamic> json) {
-    String trade = json['drug_trade_name'] ?? json['trade_name'] ?? '';
-    String scientific =
-        json['drug_scientific_name'] ?? json['scientific_name'] ?? '';
-    String id = json['_id'] ?? '';
-    String start = '';
-    if (json['drug_duration_start_date'] != null &&
-        json['drug_duration_start_date'].toString().isNotEmpty) {
-      start = _formatBackendDate(json['drug_duration_start_date']);
+    try {
+      String trade = json['drug_trade_name'] ?? json['trade_name'] ?? '';
+      String scientific =
+          json['drug_scientific_name'] ?? json['scientific_name'] ?? '';
+      String id = json['_id'] ?? '';
+      String start = '';
+      if (json['drug_duration_start_date'] != null &&
+          json['drug_duration_start_date'].toString().isNotEmpty) {
+        start = _formatBackendDate(json['drug_duration_start_date']);
+      }
+      String end = '';
+      if (json['drug_duration_end_date'] == null ||
+          json['drug_duration_end_date'].toString().isEmpty) {
+        end = 'Ongoing';
+      } else if (json['drug_duration_end_date'].toString().toLowerCase() ==
+          'ongoing') {
+        end = 'Ongoing';
+      } else {
+        end = _formatBackendDate(json['drug_duration_end_date']);
+      }
+      return Medication(
+        id,
+        json['sfda_drug_id'] ?? '',
+        trade,
+        scientific,
+        start,
+        end,
+        userId: json['user_id'] ?? "test-user", // support backend multi-user field
+      );
+    } catch (e) {
+      print("Error parsing medication: $e, data: $json");
+      return Medication('', '', '', '', '', '');
     }
-    String end = '';
-    if (json['drug_duration_end_date'] == null ||
-        json['drug_duration_end_date'].toString().isEmpty) {
-      end = 'Ongoing';
-    } else if (json['drug_duration_end_date'].toString().toLowerCase() ==
-        'ongoing') {
-      end = 'Ongoing';
-    } else {
-      end = _formatBackendDate(json['drug_duration_end_date']);
-    }
-    return Medication(
-        id, json['sfda_drug_id'] ?? '', trade, scientific, start, end);
   }
 }
 
@@ -70,6 +103,8 @@ String _formatBackendDate(dynamic date) {
       "${parsed.month.toString().padLeft(2, '0')}/"
       "${parsed.year}";
 }
+
+
 class MedicationApp extends StatefulWidget {
   const MedicationApp({super.key});
   @override
@@ -104,6 +139,7 @@ class _MedicationAppState extends State<MedicationApp> {
     );
   }
 }
+
 
 class MedicationListPage extends StatefulWidget {
   final VoidCallback onToggleTheme;
@@ -140,21 +176,30 @@ final String baseUrl = "https://mydfi.onrender.com";
       return {};
     }
   }
+Future<void> addMedication(Medication med) async {
+  try {
+    final body = jsonEncode(med.toJson());
+    print("Sending to backend: $body");
 
-  Future<void> addMedication(Medication med) async {
-    try {
-      final response = await http.post(
-        Uri.parse("$baseUrl/add_medication"),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode(med.toJson()),
-      );
-      if (response.statusCode == 200) {
-        await fetchMedications();
-      }
-    } catch (e) {
-      print("Error adding medication: $e");
+    final response = await http.post(
+      Uri.parse("$baseUrl/add_medication"),
+      headers: {"Content-Type": "application/json"},
+      body: body,
+    );
+
+    print("Response status: ${response.statusCode}");
+    print("Response body: ${response.body}");
+
+    if (response.statusCode == 200) {
+      await fetchMedications();
+    } else {
+      print("Error adding medication: ${response.body}");
     }
+  } catch (e) {
+    print("Error adding medication: $e");
   }
+}
+
 
   Future<void> deleteMedication(Medication med) async {
     try {
@@ -169,22 +214,38 @@ final String baseUrl = "https://mydfi.onrender.com";
   }
 
   Future<void> fetchMedications() async {
-    try {
-      final response =
-          await http.get(Uri.parse("$baseUrl/get_medications?user_id=1"));
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['medications'] != null) {
-          final List<dynamic> medsJson = data['medications'];
-          setState(() {
-            medications = medsJson.map((e) => Medication.fromJson(e)).toList();
-          });
-        }
+  try {
+    print("Fetching medications...");
+    final response =
+        await http.get(Uri.parse("$baseUrl/get_medications?user_id=1"));
+    print("Response status: ${response.statusCode}");
+    print("Response body: ${response.body}");
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      print("Parsed data: $data");
+
+      if (data['medications'] != null) {
+        final List<dynamic> medsJson = data['medications'];
+        setState(() {
+          medications = medsJson.map((e) {
+            try {
+              return Medication.fromJson(e);
+            } catch (err) {
+              print("Error parsing one medication: $err | data: $e");
+              return Medication('', '', '', '', '', '');
+            }
+          }).toList();
+        });
+        print("Final medications count: ${medications.length}");
       }
-    } catch (e) {
-      print("Error fetching medications: $e");
+    } else {
+      print("Non-200 response: ${response.statusCode}");
     }
+  } catch (e) {
+    print("Error fetching medications: $e");
   }
+}
 
   void _navigateToAddPage() async {
     final med = await Navigator.push(
@@ -360,6 +421,9 @@ class AddMedicationPage extends StatefulWidget {
 class _AddMedicationPageState extends State<AddMedicationPage> {
   final _tradeController = TextEditingController();
   final _scientificController = TextEditingController();
+  final _startDateController = TextEditingController();
+  final _endDateController = TextEditingController();
+
   final LayerLink _tradeLink = LayerLink();
   final LayerLink _scientificLink = LayerLink();
 
@@ -374,6 +438,10 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
   @override
   void dispose() {
     _overlayEntry?.remove();
+    _tradeController.dispose();
+    _scientificController.dispose();
+    _startDateController.dispose();
+    _endDateController.dispose();
     super.dispose();
   }
 
@@ -469,7 +537,15 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
       lastDate: DateTime(2100),
     );
     if (date != null) {
-      setState(() => isStart ? _startDate = date : _endDate = date);
+      setState(() {
+        if (isStart) {
+          _startDate = date;
+          _startDateController.text = _formatDate(date);
+        } else {
+          _endDate = date;
+          _endDateController.text = _formatDate(date);
+        }
+      });
     }
   }
 
@@ -491,6 +567,7 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
       ),
     );
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -530,8 +607,7 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
                 link: _scientificLink,
                 child: TextField(
                   controller: _scientificController,
-                  decoration:
-                      const InputDecoration(labelText: "Scientific Name"),
+                  decoration: const InputDecoration(labelText: "Scientific Name"),
                   onChanged: (value) => _updateSuggestions(value, false),
                 ),
               ),
@@ -543,9 +619,7 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
                   suffixIcon: Icon(Icons.calendar_today),
                 ),
                 onTap: () => _pickDate(true),
-                controller: TextEditingController(
-                  text: _startDate != null ? _formatDate(_startDate!) : '',
-                ),
+                controller: _startDateController,
               ),
               const SizedBox(height: 8),
               TextField(
@@ -555,9 +629,7 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
                   suffixIcon: Icon(Icons.calendar_today),
                 ),
                 onTap: () => _pickDate(false),
-                controller: TextEditingController(
-                  text: _endDate != null ? _formatDate(_endDate!) : '',
-                ),
+                controller: _endDateController,
               ),
               const SizedBox(height: 12),
               Row(
@@ -582,6 +654,8 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
                           _showInvalidDateDialog();
                           return;
                         }
+
+                        debugPrint("Submitting medication...");
                         final med = Medication(
                           "",
                           _sfdaDrugId ?? '',
@@ -590,10 +664,17 @@ class _AddMedicationPageState extends State<AddMedicationPage> {
                           _startDate != null ? _formatDate(_startDate!) : "",
                           _endDate != null ? _formatDate(_endDate!) : "",
                         );
-                        Navigator.pop(context, med);
+
+                        Navigator.pop(context, med); // parent calls backend
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('Medication added successfully!'),
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Please fill in all fields.'),
                           ),
                         );
                       }
